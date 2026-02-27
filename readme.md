@@ -44,7 +44,7 @@ Update your MCP configuration file:
         "/absolute/path/to/bear-mcp-server/src/bear-mcp-server.js"
       ],
       "env": {
-        "BEAR_DATABASE_PATH": "/Users/yourusername/Library/Group Containers/9K33E3U3T4.net.shinyfrog.net.bear/Application Data/database.sqlite"
+        "BEAR_DATABASE_PATH": "/Users/yourusername/Library/Group Containers/9K33E3U3T4.net.shinyfrog.bear/Application Data/database.sqlite"
       }
     }
   }
