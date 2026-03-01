@@ -1,6 +1,10 @@
 node_modules
 .DS_Store
+.env
 
-# Vector index files
+# Vector index data
+data/
+
+# Legacy index files (pre-v2)
 src/note_vectors.index
 src/note_vectors.json
