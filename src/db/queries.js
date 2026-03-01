@@ -43,6 +43,17 @@ export function getAllTags() {
   return rows;
 }
 
+export function getNoteUuidsByTag(tagName) {
+  const rows = stmt('noteUuidsByTag', `
+    SELECT ZN.${COLUMNS.NOTE_UUID} AS id
+    FROM ${TABLES.NOTE} ZN
+    JOIN ${TABLES.NOTE_TAG_JOIN} J ON J.${COLUMNS.JOIN_NOTE_FK} = ZN.${COLUMNS.NOTE_PK}
+    JOIN ${TABLES.TAG} ZT ON ZT.${COLUMNS.TAG_PK} = J.${COLUMNS.JOIN_TAG_FK}
+    WHERE ZT.${COLUMNS.TAG_TITLE} = ? AND ZN.${COLUMNS.NOTE_TRASHED} = 0
+  `).all(tagName);
+  return new Set(rows.map(r => r.id));
+}
+
 // -- Note columns --
 
 const NOTE_COLUMNS = `

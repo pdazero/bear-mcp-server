@@ -23,7 +23,7 @@ export function createReadTools({ db, provider, indexManager, hasSemanticSearch 
         if (useSemantic) {
           try {
             const { semanticSearch } = await import('../rag/semantic-search.js');
-            const notes = await semanticSearch(provider, indexManager, db, query, limit);
+            const notes = await semanticSearch(provider, indexManager, db, query, { limit });
             if (notes.length > 0) return { notes, searchMethod: 'semantic' };
           } catch { /* fall through */ }
         }
@@ -180,25 +180,108 @@ export function createReadTools({ db, provider, indexManager, hasSemanticSearch 
     },
   ];
 
-  // -- retrieve_for_rag (conditional on semantic search) --
+  // -- Semantic search tools (conditional on semantic search) --
   if (hasSemanticSearch) {
     tools.push({
       definition: {
         name: 'retrieve_for_rag',
-        description: 'Retrieve notes semantically similar to a query, formatted for use as context in AI responses.',
+        description: 'Retrieve notes semantically similar to a query, formatted for use as context in AI responses. Supports token budget and metadata control.',
         inputSchema: {
           type: 'object',
           properties: {
             query: { type: 'string', description: 'Query for which to find relevant notes' },
             limit: { type: 'number', description: 'Maximum number of notes to retrieve (default: 5)' },
+            max_tokens: { type: 'number', description: 'Token budget for context text (default: 4000)' },
+            include_metadata: { type: 'boolean', description: 'Include metadata headers in context (default: true)' },
           },
           required: ['query'],
         },
       },
-      handler: async ({ query, limit = 5 }) => {
+      handler: async ({ query, limit = 5, max_tokens = 4000, include_metadata = true }) => {
         const { retrieveForRAG } = await import('../rag/semantic-search.js');
-        const context = await retrieveForRAG(provider, indexManager, db, query, limit);
-        return { context, query };
+        const result = await retrieveForRAG(provider, indexManager, db, query, {
+          limit, maxTokens: max_tokens, includeMetadata: include_metadata,
+        });
+        return { ...result, query };
+      },
+    });
+
+    tools.push({
+      definition: {
+        name: 'semantic_search',
+        description: 'Search Bear notes using semantic similarity. Returns notes ranked by relevance to the query, with optional tag filtering.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query' },
+            limit: { type: 'number', description: 'Max results (default: 10)' },
+            min_similarity: { type: 'number', description: 'Minimum similarity threshold 0-1 (default: 0.3)' },
+            tag_filter: { type: 'string', description: 'Only return notes with this tag' },
+          },
+          required: ['query'],
+        },
+      },
+      handler: async ({ query, limit = 10, min_similarity = 0.3, tag_filter }) => {
+        const { semanticSearch } = await import('../rag/semantic-search.js');
+        const notes = await semanticSearch(provider, indexManager, db, query, {
+          limit, minSimilarity: min_similarity, tagFilter: tag_filter,
+        });
+        return {
+          notes: notes.map(n => ({
+            id: n.id,
+            title: n.title,
+            snippet: n.content ? (n.content.replace(/^#{1,6}\s+.*$/gm, '').trim().slice(0, 200) || '') : '',
+            similarity_score: n.score,
+            tags: n.tags,
+            modification_date: n.modification_date,
+          })),
+          searchMethod: 'semantic',
+        };
+      },
+    });
+
+    tools.push({
+      definition: {
+        name: 'find_related',
+        description: 'Find notes semantically similar to a given note. Useful for discovering connections between notes.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Note UUID to find related notes for' },
+            title: { type: 'string', description: 'Note title to find related notes for' },
+            limit: { type: 'number', description: 'Max results (default: 10)' },
+            min_similarity: { type: 'number', description: 'Minimum similarity threshold 0-1 (default: 0.4)' },
+          },
+        },
+      },
+      handler: async ({ id, title, limit = 10, min_similarity = 0.4 }) => {
+        if (!id && !title) throw new Error('Either id or title is required');
+        const { findRelated } = await import('../rag/semantic-search.js');
+        const related = await findRelated(provider, indexManager, db, {
+          id, title, limit, minSimilarity: min_similarity,
+        });
+        return { related };
+      },
+    });
+
+    tools.push({
+      definition: {
+        name: 'discover_patterns',
+        description: 'Discover thematic patterns across notes using clustering. Groups similar notes together and extracts common terms.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            num_clusters: { type: 'number', description: 'Number of clusters to create (default: 8)' },
+            tag_filter: { type: 'string', description: 'Only cluster notes with this tag' },
+          },
+        },
+      },
+      handler: async ({ num_clusters = 8, tag_filter } = {}) => {
+        const { discoverPatterns } = await import('../rag/semantic-search.js');
+        const result = await discoverPatterns(indexManager, db, {
+          numClusters: num_clusters, tagFilter: tag_filter,
+        });
+        return result;
       },
     });
   }

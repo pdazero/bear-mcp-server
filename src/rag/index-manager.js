@@ -105,6 +105,20 @@ export class IndexManager {
     return true;
   }
 
+  getVector(uuid) {
+    if (!this.uuidToLabel.has(uuid)) return null;
+    const label = this.uuidToLabel.get(uuid);
+    return this.index.getPoint(label);
+  }
+
+  getAllVectors() {
+    const result = [];
+    for (const [uuid, label] of this.uuidToLabel) {
+      result.push({ uuid, vector: this.index.getPoint(label) });
+    }
+    return result;
+  }
+
   search(vector, k = 10) {
     if (!this.index || this.size === 0) return [];
 
