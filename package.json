@@ -1,7 +1,7 @@
 {
   "name": "bear-mcp-server",
   "version": "2.0.0",
-  "description": "Model Context Protocol server for Bear Notes with RAG capabilities",
+  "description": "Model Context Protocol server for Bear Notes with semantic search, RAG, and write capabilities",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -9,6 +9,22 @@
     "index": "node scripts/create-index.js",
     "explore": "node scripts/explore-db.js",
     "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "bear-notes",
+    "rag",
+    "semantic-search",
+    "vector-search",
+    "embeddings",
+    "ai-tools"
+  ],
+  "author": "pda",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pda/bear-mcp-server.git"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.4.0",
