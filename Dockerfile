@@ -5,13 +5,13 @@ LABEL org.opencontainers.image.title="Bear Notes MCP Server" \
       org.opencontainers.image.description="MCP server for Bear Notes with semantic search and RAG" \
       org.opencontainers.image.source="https://github.com/pda/bear-mcp-server"
 
-ENV NODE_ENV=production
-
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm install --production
 
 COPY . .
+
+ENV NODE_ENV=production
 
 CMD ["node", "src/index.js"]

@@ -1,3 +1,9 @@
 node_modules
 npm-debug.log
 .DS_Store
+data/
+.git
+.github
+tests
+.gitignore
+.env
