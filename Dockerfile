@@ -13,6 +13,5 @@ COPY package*.json ./
 RUN npm install --production
 
 COPY . .
-COPY env.example .env.example
 
 CMD ["node", "src/index.js"]

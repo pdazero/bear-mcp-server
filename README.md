@@ -72,7 +72,7 @@ All configuration is optional — sensible defaults are built in.
 
 | Preset | Provider | Model | Dimensions | Notes |
 |--------|----------|-------|------------|-------|
-| `light` | transformers.js | embeddinggemma-300m-ONNX | 768 | Built-in, no external dependencies |
+| `light` | transformers.js | onnx-community/embeddinggemma-300m-ONNX | 768 | Built-in, no external dependencies |
 | `medium` | LM Studio / Ollama | bge-m3 | 1024 | Requires local inference server |
 | `heavy` | LM Studio / Ollama | qwen3-embedding:4b | 1024 | Best quality, requires local inference server |
 
@@ -175,15 +175,17 @@ You still need an initial `npm run index` to create the index. Auto-indexing kee
 # Build
 docker build -t bear-mcp-server .
 
-# Index your notes
+# Index your notes (persists index in a named volume)
 docker run \
   -v "/path/to/Bear/database.sqlite:/app/database.sqlite:ro" \
+  -v bear-data:/app/data \
   -e BEAR_DATABASE_PATH=/app/database.sqlite \
   bear-mcp-server npm run index
 
-# Run the server
+# Run the server (same volume to access the index)
 docker run \
   -v "/path/to/Bear/database.sqlite:/app/database.sqlite:ro" \
+  -v bear-data:/app/data \
   -e BEAR_DATABASE_PATH=/app/database.sqlite \
   bear-mcp-server
 ```
