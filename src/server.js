@@ -38,10 +38,15 @@ export function createMcpServer(tools) {
 
     try {
       const result = await handler(args || {});
-      return { toolResult: result };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result) ?? '{}' }],
+      };
     } catch (error) {
       log.error(`Tool ${name} failed:`, error.message);
-      return { toolResult: { error: error.message } };
+      return {
+        content: [{ type: 'text', text: error.message }],
+        isError: true,
+      };
     }
   });
 
