@@ -25,9 +25,12 @@ end tell
  */
 export function getActiveNoteTitle() {
   return new Promise((resolve, reject) => {
-    execFile('osascript', ['-e', APPLESCRIPT], { timeout: 5000 }, (error, stdout) => {
+    execFile('osascript', ['-e', APPLESCRIPT], { timeout: 5000 }, (error, stdout, stderr) => {
       if (error) {
-        const msg = error.stderr || error.message || String(error);
+        // Use stderr (actual osascript output) to detect the cause;
+        // error.message contains the full script text, so matching against it
+        // would falsely match our own AppleScript error strings.
+        const msg = stderr || '';
 
         if (msg.includes('Bear is not running')) {
           reject(new Error('Bear is not running. Please open Bear and navigate to a note.'));
@@ -44,13 +47,13 @@ export function getActiveNoteTitle() {
           return;
         }
 
-        reject(new Error(`Failed to get active Bear note: ${msg}`));
+        reject(new Error(`Failed to get active Bear note: ${msg || error.message}`));
         return;
       }
 
       const title = stdout.trim();
-      if (!title) {
-        reject(new Error('Bear returned an empty window title.'));
+      if (!title || title === 'Bear') {
+        reject(new Error('No note is currently open in its own window. In Bear, double-click or use Edit → Open Note in New Window, then try again.'));
         return;
       }
 

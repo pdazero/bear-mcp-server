@@ -22,7 +22,6 @@ describe('getActiveNoteTitle', () => {
       cb(null, '  My Note Title\n', '');
     });
 
-    // Dynamically replace execFile via module mock
     const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
     const title = await getTitle();
     assert.equal(title, 'My Note Title');
@@ -30,9 +29,8 @@ describe('getActiveNoteTitle', () => {
 
   it('rejects when Bear is not running', async () => {
     const mockExecFile = mock.fn((cmd, args, opts, cb) => {
-      const err = new Error('execution error');
-      err.stderr = 'Bear is not running';
-      cb(err, '', '');
+      const err = new Error('Command failed');
+      cb(err, '', '0:0: execution error: Bear is not running (-2700)');
     });
 
     const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
@@ -41,9 +39,8 @@ describe('getActiveNoteTitle', () => {
 
   it('rejects when Bear has no open windows', async () => {
     const mockExecFile = mock.fn((cmd, args, opts, cb) => {
-      const err = new Error('execution error');
-      err.stderr = 'Bear has no open windows';
-      cb(err, '', '');
+      const err = new Error('Command failed');
+      cb(err, '', '182:208: execution error: Bear has no open windows (-2700)');
     });
 
     const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
@@ -52,9 +49,8 @@ describe('getActiveNoteTitle', () => {
 
   it('rejects when accessibility permission is missing', async () => {
     const mockExecFile = mock.fn((cmd, args, opts, cb) => {
-      const err = new Error('execution error');
-      err.stderr = 'not allowed assistive access';
-      cb(err, '', '');
+      const err = new Error('Command failed');
+      cb(err, '', 'not allowed assistive access');
     });
 
     const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
@@ -67,7 +63,16 @@ describe('getActiveNoteTitle', () => {
     });
 
     const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
-    await assert.rejects(getTitle(), /empty window title/);
+    await assert.rejects(getTitle(), /No note is currently open in its own window/);
+  });
+
+  it('rejects when window title is just "Bear" (main window, no note open)', async () => {
+    const mockExecFile = mock.fn((cmd, args, opts, cb) => {
+      cb(null, 'Bear\n', '');
+    });
+
+    const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
+    await assert.rejects(getTitle(), /No note is currently open in its own window/);
   });
 
   it('passes correct args to osascript', async () => {
@@ -93,19 +98,32 @@ describe('getActiveNoteTitle', () => {
     const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
     await assert.rejects(getTitle(), /Failed to get active Bear note/);
   });
+
+  it('uses stderr for error detection, not error.message', async () => {
+    // error.message contains the full script text which includes all our
+    // error strings; only stderr has the actual osascript error output.
+    const mockExecFile = mock.fn((cmd, args, opts, cb) => {
+      const err = new Error('Command failed: osascript -e ... error "Bear is not running" ...');
+      cb(err, '', 'some other osascript error');
+    });
+
+    const { getActiveNoteTitle: getTitle } = await mockModule(mockExecFile);
+    // Should NOT match "Bear is not running" from error.message
+    await assert.rejects(getTitle(), /Failed to get active Bear note: some other osascript error/);
+  });
 });
 
 /**
  * Build a version of active-note module with a mocked execFile.
- * Uses a self-contained function that mirrors the module's logic
- * so we can inject the mock without modifying the real module.
+ * Mirrors the module's logic so we can inject the mock without
+ * modifying the real module.
  */
 async function mockModule(mockExecFile) {
   function getActiveNoteTitle() {
     return new Promise((resolve, reject) => {
-      mockExecFile('osascript', ['-e', APPLESCRIPT], { timeout: 5000 }, (error, stdout) => {
+      mockExecFile('osascript', ['-e', APPLESCRIPT], { timeout: 5000 }, (error, stdout, stderr) => {
         if (error) {
-          const msg = error.stderr || error.message || String(error);
+          const msg = stderr || '';
 
           if (msg.includes('Bear is not running')) {
             reject(new Error('Bear is not running. Please open Bear and navigate to a note.'));
@@ -122,13 +140,13 @@ async function mockModule(mockExecFile) {
             return;
           }
 
-          reject(new Error(`Failed to get active Bear note: ${msg}`));
+          reject(new Error(`Failed to get active Bear note: ${msg || error.message}`));
           return;
         }
 
         const title = stdout.trim();
-        if (!title) {
-          reject(new Error('Bear returned an empty window title.'));
+        if (!title || title === 'Bear') {
+          reject(new Error('No note is currently open in its own window. In Bear, double-click or use Edit → Open Note in New Window, then try again.'));
           return;
         }
 
