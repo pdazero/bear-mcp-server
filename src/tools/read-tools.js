@@ -1,3 +1,5 @@
+import { getActiveNoteTitle } from '../bear-api/active-note.js';
+
 export function createReadTools({ db, provider, indexManager, hasSemanticSearch }) {
   const tools = [
     // -- search_notes (enhanced: tag filter, sort_by, exclude_trashed) --
@@ -49,6 +51,36 @@ export function createReadTools({ db, provider, indexManager, hasSemanticSearch 
         if (!id && !title) throw new Error('Either id or title is required');
         const note = id ? db.getNoteById(id) : db.getNoteByTitle(title);
         return { note };
+      },
+    },
+
+    // -- get_active_note (detect currently open note in Bear) --
+    {
+      definition: {
+        name: 'get_active_note',
+        description: 'Detect and return the note currently open in Bear. Requires no parameters — automatically reads the active window title via macOS Accessibility. Requires Accessibility permissions for the host process.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      handler: async () => {
+        let title = await getActiveNoteTitle();
+
+        // Try exact match first
+        try {
+          const note = db.getNoteByTitle(title);
+          return { note };
+        } catch { /* not found, try cleaning suffix */ }
+
+        // Bear may append " – Bear" or similar suffix to window title
+        const cleaned = title.replace(/\s+[–—-]\s+Bear$/, '');
+        if (cleaned !== title) {
+          const note = db.getNoteByTitle(cleaned);
+          return { note };
+        }
+
+        throw new Error(`Could not find a note matching the window title: "${title}"`);
       },
     },
 
