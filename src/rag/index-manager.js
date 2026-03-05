@@ -82,6 +82,10 @@ export class IndexManager {
     log.info(`Initialized empty index: ${dimensions}d`);
   }
 
+  hasPoint(uuid) {
+    return this.uuidToLabel.has(uuid);
+  }
+
   addPoint(uuid, vector) {
     // If this UUID already exists, mark-delete old point
     if (this.uuidToLabel.has(uuid)) {
