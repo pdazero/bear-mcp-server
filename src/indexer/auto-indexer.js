@@ -67,10 +67,7 @@ export class AutoIndexer {
       } catch (err) {
         log.warn(`Failed to embed note ${note.id}: ${err.message}`);
         errors++;
-        // Still advance timestamp past this note if it has a later date
-        if (note.modification_date > maxTimestamp) {
-          maxTimestamp = note.modification_date;
-        }
+        // Don't advance timestamp past failed notes so they are retried next sync
       }
     }
 
@@ -89,9 +86,6 @@ export class AutoIndexer {
 
     // 4. Save if there were changes
     if (indexed > 0 || removed > 0) {
-      this.indexManager.save(this.config.embedding, { lastIndexedTimestamp: maxTimestamp });
-    } else if (maxTimestamp > lastTimestamp) {
-      // Timestamp advanced (e.g., all notes errored but we still advance)
       this.indexManager.save(this.config.embedding, { lastIndexedTimestamp: maxTimestamp });
     }
 

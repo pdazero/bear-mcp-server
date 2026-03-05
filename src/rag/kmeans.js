@@ -48,7 +48,7 @@ function initCentroidsPlusPlus(vectors, k) {
   return centroids;
 }
 
-function recomputeCentroids(vectors, assignments, k, dims) {
+function recomputeCentroids(vectors, assignments, k, dims, oldCentroids) {
   const sums = Array.from({ length: k }, () => new Float64Array(dims));
   const counts = new Array(k).fill(0);
 
@@ -61,7 +61,7 @@ function recomputeCentroids(vectors, assignments, k, dims) {
   }
 
   return sums.map((sum, i) => {
-    if (counts[i] === 0) return Array.from(sum); // empty cluster keeps old centroid
+    if (counts[i] === 0) return [...oldCentroids[i]]; // empty cluster keeps old centroid
     return Array.from(sum, v => v / counts[i]);
   });
 }
@@ -102,7 +102,7 @@ export function kmeans(vectors, k, maxIterations = 50) {
 
     if (!changed) break; // converged
 
-    centroids = recomputeCentroids(vectors, assignments, actualK, dims);
+    centroids = recomputeCentroids(vectors, assignments, actualK, dims, centroids);
   }
 
   return { assignments, centroids };

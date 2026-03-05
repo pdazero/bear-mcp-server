@@ -289,7 +289,7 @@ describe('AutoIndexer', () => {
     const status = indexer.getStatus();
     assert.equal(status.notesIndexed, 2);
     assert.equal(status.errors, 1);
-    // Timestamp should still advance past the failed note
+    // Timestamp advances to max of successful notes (note-ok-2 at 300)
     assert.equal(mocks.indexManager.lastIndexedTimestamp, 300);
   });
 

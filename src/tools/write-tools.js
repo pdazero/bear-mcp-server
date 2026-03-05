@@ -1,22 +1,49 @@
 import { callBear } from '../bear-api/xcallback.js';
 
+/**
+ * Apply note conventions to create_note params:
+ * - Prefix title with YYYYMMDDHHmm timestamp
+ * - Append #_TAG context tag to body if provided
+ * Mutates and returns the params object.
+ */
+export function prepareCreateNoteParams(params, now = new Date()) {
+  const ts = String(now.getFullYear())
+    + String(now.getMonth() + 1).padStart(2, '0')
+    + String(now.getDate()).padStart(2, '0')
+    + String(now.getHours()).padStart(2, '0')
+    + String(now.getMinutes()).padStart(2, '0');
+  params.title = params.title ? `${ts} ${params.title}` : ts;
+
+  if (params.context_tag) {
+    const tagLine = `#_${params.context_tag.toLowerCase()}`;
+    params.text = params.text ? `${params.text}\n\n${tagLine}` : tagLine;
+    delete params.context_tag;
+  }
+
+  return params;
+}
+
 export function createWriteTools() {
   return [
     // -- create_note --
     {
       definition: {
         name: 'create_note',
-        description: 'Create a new note in Bear. At least title or text must be provided.',
+        description: 'Create a new note in Bear. A YYYYMMDDHHmm timestamp is auto-prepended to the title. Use context_tag to classify the note into one of the user\'s life domains. At least title or text must be provided.',
         inputSchema: {
           type: 'object',
           properties: {
             title: { type: 'string', description: 'Note title' },
             text: { type: 'string', description: 'Note body (Markdown)' },
-            tags: { type: 'string', description: 'Comma-separated tags' },
+            tags: { type: 'string', description: 'Comma-separated tags. Prefer reusing existing tags (use get_tags to check) before inventing new ones.' },
             pin: { type: 'boolean', description: 'Pin the note' },
             open_note: { type: 'boolean', description: 'Open the note in Bear' },
-            timestamp: { type: 'boolean', description: 'Prepend timestamp' },
             type: { type: 'string', enum: ['bear', 'markdown', 'html', 'text'], description: 'Content type (default: markdown)' },
+            context_tag: {
+              type: 'string',
+              enum: ['deilania', 'docencia', 'falp', 'startup', 'personal'],
+              description: 'Context tag classifying the note into a life domain. Always set one. Values: "falp" = work at Fundación Arturo López Pérez; "deilania" = startups Deilania/Avatarmedico/Azozio; "docencia" = teaching at Universidad de los Andes; "startup" = startup ecosystem (not own startups); "personal" = personal/family/anything else.',
+            },
           },
         },
       },
@@ -24,6 +51,7 @@ export function createWriteTools() {
         if (!params.title && !params.text) {
           throw new Error('At least title or text is required');
         }
+        prepareCreateNoteParams(params);
         return callBear('create', params);
       },
     },
@@ -189,7 +217,7 @@ export function createWriteTools() {
           type: 'object',
           properties: {
             url: { type: 'string', description: 'URL to grab' },
-            tags: { type: 'string', description: 'Comma-separated tags' },
+            tags: { type: 'string', description: 'Comma-separated tags. Prefer reusing existing tags (use get_tags to check) before inventing new ones.' },
             pin: { type: 'boolean', description: 'Pin the note' },
           },
           required: ['url'],
