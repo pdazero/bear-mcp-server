@@ -194,4 +194,53 @@ describe('BearOAuthProvider', () => {
       await assert.rejects(() => provider.exchangeAuthorizationCode(client, code), /expired/);
     });
   });
+
+  describe('cleanup', () => {
+    it('purges expired pending auths and auth codes', async () => {
+      let capturedId;
+      const res = { redirect(url) { capturedId = new URL(url, 'http://x').searchParams.get('pending'); } };
+
+      // Create a pending auth and expire it
+      await provider.authorize(client, makeParams(), res);
+      const expiredPendingId = capturedId;
+      const pendingRecord = provider._pendingAuths.get(expiredPendingId);
+      pendingRecord.expiresAt = Date.now() - 1000;
+
+      // Create a second pending auth to get an auth code, then expire it
+      await provider.authorize(client, makeParams(), res);
+      const secondPendingId = capturedId;
+      const redirectUrl = provider.approvePendingAuth(secondPendingId);
+      const code = new URL(redirectUrl).searchParams.get('code');
+      const codeRecord = provider._authCodes.get(code);
+      codeRecord.expiresAt = Date.now() - 1000;
+
+      const purged = provider._purgeExpired();
+      assert.ok(purged >= 2);
+      assert.equal(provider._pendingAuths.has(expiredPendingId), false);
+      assert.equal(provider._authCodes.has(code), false);
+    });
+
+    it('purges expired access tokens', async () => {
+      let pendingId;
+      const res = { redirect(url) { pendingId = new URL(url, 'http://x').searchParams.get('pending'); } };
+      await provider.authorize(client, makeParams(), res);
+      const code = new URL(provider.approvePendingAuth(pendingId)).searchParams.get('code');
+      const tokens = await provider.exchangeAuthorizationCode(client, code);
+
+      // Expire the access token
+      const record = provider._accessTokens.get(tokens.access_token);
+      record.expiresAt = Math.floor(Date.now() / 1000) - 10;
+
+      const purged = provider._purgeExpired();
+      assert.ok(purged >= 1);
+      assert.equal(provider._accessTokens.has(tokens.access_token), false);
+    });
+
+    it('startCleanup and stopCleanup manage interval lifecycle', () => {
+      provider.startCleanup(100_000);
+      assert.ok(provider._cleanupInterval);
+      provider.stopCleanup();
+      assert.equal(provider._cleanupInterval, null);
+    });
+  });
 });
