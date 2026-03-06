@@ -3,6 +3,8 @@ import path from 'path';
 import crypto from 'crypto';
 
 export class FileClientsStore {
+  static MAX_CLIENTS = 50;
+
   constructor(dataDir) {
     this._dir = path.join(dataDir, 'auth');
     this._filePath = path.join(this._dir, 'clients.json');
@@ -15,6 +17,9 @@ export class FileClientsStore {
   }
 
   registerClient(clientInfo) {
+    if (this._clients.size >= FileClientsStore.MAX_CLIENTS) {
+      throw new Error(`Client registration limit reached (max ${FileClientsStore.MAX_CLIENTS})`);
+    }
     const clientId = crypto.randomUUID();
     const client = {
       ...clientInfo,

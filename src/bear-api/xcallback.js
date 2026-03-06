@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('xcallback');
@@ -35,7 +35,7 @@ export function callBear(action, params = {}) {
   log.debug(`${action}:`, url);
 
   return new Promise((resolve, reject) => {
-    exec(`open "${url}"`, (error) => {
+    execFile('open', [url], (error) => {
       if (error) {
         reject(new Error(`Failed to call Bear: ${error.message}`));
         return;

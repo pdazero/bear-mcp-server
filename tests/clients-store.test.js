@@ -63,4 +63,15 @@ describe('FileClientsStore', () => {
     const store = new FileClientsStore(path.join(tmpDir, 'nonexistent'));
     assert.equal(store.getClient('any'), undefined);
   });
+
+  it('throws when exceeding MAX_CLIENTS limit', () => {
+    const store = new FileClientsStore(tmpDir);
+    for (let i = 0; i < FileClientsStore.MAX_CLIENTS; i++) {
+      store.registerClient({ redirect_uris: ['http://localhost/callback'], client_name: `Client ${i}` });
+    }
+    assert.throws(
+      () => store.registerClient({ redirect_uris: ['http://localhost/callback'], client_name: 'One too many' }),
+      /Client registration limit reached/,
+    );
+  });
 });

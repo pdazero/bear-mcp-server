@@ -6,9 +6,12 @@ import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { FileClientsStore } from '../auth/clients-store.js';
 import { BearOAuthProvider } from '../auth/oauth-provider.js';
+import { LoginRateLimiter } from '../auth/rate-limiter.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('http');
+const MAX_SESSIONS = 100;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export async function startHttpServer({ createMcpServer, tools, config }) {
   const { transport: transportConfig, auth: authConfig } = config;
@@ -24,6 +27,19 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
 
   const app = createMcpExpressApp({ host: issuerUrl.hostname });
   app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+
+  // Security headers
+  app.use((_req, res, next) => {
+    res.set({
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+    });
+    next();
+  });
 
   // Body parsing for login form
   app.use('/login', express.urlencoded({ extended: false }));
@@ -41,21 +57,44 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     resourceServerUrl,
   }));
 
+  // Rate limiter and CSRF tokens
+  const rateLimiter = new LoginRateLimiter();
+  const csrfTokens = new Map(); // csrfToken → pendingId
+
   // Login page
   app.get('/login', (req, res) => {
     const pendingId = req.query.pending;
     const error = req.query.error;
-    res.type('html').send(loginPage(pendingId, error));
+    const csrfToken = crypto.randomUUID();
+    csrfTokens.set(csrfToken, pendingId);
+    res.type('html').send(loginPage(pendingId, error, csrfToken));
   });
 
   app.post('/login', (req, res) => {
-    const { password, pending } = req.body;
+    const { password, pending, csrf_token } = req.body;
+
+    // CSRF validation
+    if (!csrf_token || !csrfTokens.has(csrf_token) || csrfTokens.get(csrf_token) !== pending) {
+      return res.redirect(`/login?pending=${encodeURIComponent(pending)}&error=invalid_pending`);
+    }
+    csrfTokens.delete(csrf_token);
+
+    // Rate limiting
+    const ip = req.ip;
+    const rateCheck = rateLimiter.check(ip);
+    if (rateCheck.blocked) {
+      res.set('Retry-After', String(rateCheck.retryAfterSeconds));
+      return res.status(429).type('html').send(loginPage(pending, 'too_many_attempts'));
+    }
 
     const passwordBuf = Buffer.from(password || '');
     const secretBuf = Buffer.from(authConfig.secret);
     if (passwordBuf.length !== secretBuf.length || !crypto.timingSafeEqual(passwordBuf, secretBuf)) {
+      rateLimiter.recordFailure(ip);
       return res.redirect(`/login?pending=${encodeURIComponent(pending)}&error=wrong_password`);
     }
+
+    rateLimiter.recordSuccess(ip);
 
     let redirectUrl;
     try {
@@ -71,12 +110,23 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
   const bearerAuth = requireBearerAuth({ verifier: oauthProvider });
   const sessions = new Map(); // sessionId → { transport, server }
 
+  function getSession(sessionId) {
+    const session = sessions.get(sessionId);
+    if (!session) return null;
+    if (Date.now() - session.createdAt > SESSION_TTL_MS) {
+      session.transport.close().catch(() => {});
+      sessions.delete(sessionId);
+      return null;
+    }
+    return session;
+  }
+
   app.post('/mcp', bearerAuth, async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
 
     if (sessionId) {
-      if (sessions.has(sessionId)) {
-        const session = sessions.get(sessionId);
+      const session = getSession(sessionId);
+      if (session) {
         await session.transport.handleRequest(req, res, req.body);
       } else {
         res.status(404).json({ error: 'Session not found' });
@@ -85,6 +135,14 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     }
 
     // New session (no session ID — must be initialize)
+    // Evict oldest session if at capacity
+    if (sessions.size >= MAX_SESSIONS) {
+      const oldestKey = sessions.keys().next().value;
+      const oldest = sessions.get(oldestKey);
+      await oldest.transport.close().catch(() => {});
+      sessions.delete(oldestKey);
+    }
+
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
     });
@@ -100,25 +158,25 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     await transport.handleRequest(req, res, req.body);
 
     if (transport.sessionId) {
-      sessions.set(transport.sessionId, { transport, server });
+      sessions.set(transport.sessionId, { transport, server, createdAt: Date.now() });
     }
   });
 
   app.get('/mcp', bearerAuth, async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
-    if (!sessionId || !sessions.has(sessionId)) {
+    const session = sessionId && getSession(sessionId);
+    if (!session) {
       return res.status(400).json({ error: 'Invalid or missing session ID' });
     }
-    const session = sessions.get(sessionId);
     await session.transport.handleRequest(req, res);
   });
 
   app.delete('/mcp', bearerAuth, async (req, res) => {
     const sessionId = req.headers['mcp-session-id'];
-    if (!sessionId || !sessions.has(sessionId)) {
+    const session = sessionId && getSession(sessionId);
+    if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
-    const session = sessions.get(sessionId);
     await session.transport.close();
     sessions.delete(sessionId);
     res.status(200).json({ message: 'Session terminated' });
@@ -134,11 +192,15 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     log.info(`HTTP server listening on ${transportConfig.host}:${transportConfig.port}`);
   });
 
+  oauthProvider.startCleanup();
+
   return {
     httpServer,
     sessions,
     oauthProvider,
     async shutdown() {
+      rateLimiter.dispose();
+      oauthProvider.stopCleanup();
       for (const [, session] of sessions) {
         await session.transport.close().catch(() => {});
       }
@@ -153,11 +215,13 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function loginPage(pendingId, error) {
+function loginPage(pendingId, error, csrfToken) {
   const errorMsg = error === 'wrong_password' ? 'Incorrect password. Try again.'
     : error === 'invalid_pending' ? 'Authorization request expired. Start over.'
+    : error === 'too_many_attempts' ? 'Too many failed attempts. Please wait before trying again.'
     : '';
   const safePendingId = escapeHtml(pendingId);
+  const safeCsrfToken = escapeHtml(csrfToken);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -183,6 +247,7 @@ function loginPage(pendingId, error) {
   ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
   <form method="POST" action="/login">
     <input type="hidden" name="pending" value="${safePendingId}">
+    <input type="hidden" name="csrf_token" value="${safeCsrfToken}">
     <label for="password">Password</label>
     <input type="password" id="password" name="password" required autofocus>
     <button type="submit">Sign In</button>

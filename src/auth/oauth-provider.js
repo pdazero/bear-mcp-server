@@ -168,4 +168,36 @@ export class BearOAuthProvider {
       this._refreshTokens.delete(request.token);
     }
   }
+
+  startCleanup(intervalMs = 3600000) {
+    this._cleanupInterval = setInterval(() => this._purgeExpired(), intervalMs);
+    this._cleanupInterval.unref();
+  }
+
+  stopCleanup() {
+    if (this._cleanupInterval) {
+      clearInterval(this._cleanupInterval);
+      this._cleanupInterval = null;
+    }
+  }
+
+  _purgeExpired() {
+    const nowMs = Date.now();
+    const nowSec = Math.floor(nowMs / 1000);
+    let purged = 0;
+
+    for (const [id, record] of this._pendingAuths) {
+      if (nowMs > record.expiresAt) { this._pendingAuths.delete(id); purged++; }
+    }
+    for (const [code, record] of this._authCodes) {
+      if (nowMs > record.expiresAt) { this._authCodes.delete(code); purged++; }
+    }
+    for (const [token, record] of this._accessTokens) {
+      if (nowSec > record.expiresAt) { this._accessTokens.delete(token); purged++; }
+    }
+    // Refresh tokens don't expire on their own, skip
+
+    if (purged > 0) log.debug(`Purged ${purged} expired entries`);
+    return purged;
+  }
 }
