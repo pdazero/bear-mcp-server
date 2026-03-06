@@ -20,7 +20,9 @@ export function buildBearUrl(action, params = {}) {
     }
   }
 
-  const query = new URLSearchParams(filtered).toString();
+  // URLSearchParams encodes spaces as '+' (x-www-form-urlencoded),
+  // but Bear's x-callback-url expects RFC 3986 percent-encoding (%20).
+  const query = new URLSearchParams(filtered).toString().replaceAll('+', '%20');
   return `bear://x-callback-url/${action}${query ? '?' + query : ''}`;
 }
 

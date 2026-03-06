@@ -53,7 +53,7 @@ export function createMcpServer(tools) {
   return server;
 }
 
-export async function startServer(server) {
+export async function startStdioServer(server) {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   log.info('MCP server ready on stdio');

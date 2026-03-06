@@ -31,9 +31,10 @@ describe('buildBearUrl', () => {
     assert.ok(!url.includes('text='));
   });
 
-  it('URL-encodes special characters', () => {
+  it('URL-encodes spaces as %20 (not +) for Bear compatibility', () => {
     const url = buildBearUrl('create', { title: 'Hello World & More' });
-    assert.ok(url.includes('title=Hello+World+%26+More') || url.includes('title=Hello%20World%20%26%20More'));
+    assert.ok(url.includes('title=Hello%20World%20%26%20More'));
+    assert.ok(!url.includes('+'), 'should not contain + (Bear interprets them literally)');
   });
 
   it('adds show_window=no by default', () => {

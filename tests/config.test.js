@@ -9,6 +9,8 @@ describe('config', () => {
     'EMBEDDING_DIMENSIONS', 'EMBEDDING_BACKEND', 'EMBEDDING_BASE_URL',
     'EMBEDDING_API_KEY', 'EMBEDDING_INSTRUCTION_PREFIX',
     'BEAR_DATABASE_PATH', 'DATA_DIR', 'LOG_LEVEL',
+    'MCP_TRANSPORT', 'MCP_PORT', 'MCP_HOST',
+    'MCP_AUTH_SECRET', 'MCP_AUTH_ISSUER_URL', 'MCP_AUTH_TOKEN_TTL',
   ];
 
   beforeEach(() => {
@@ -81,5 +83,33 @@ describe('config', () => {
     const config = loadConfig();
     assert.throws(() => { config.logLevel = 'debug'; }, TypeError);
     assert.throws(() => { config.embedding.provider = 'x'; }, TypeError);
+  });
+
+  it('defaults transport to stdio on port 3000', () => {
+    const config = loadConfig();
+    assert.equal(config.transport.mode, 'stdio');
+    assert.equal(config.transport.port, 3000);
+    assert.equal(config.transport.host, '127.0.0.1');
+  });
+
+  it('throws when http mode missing MCP_AUTH_SECRET', () => {
+    process.env.MCP_TRANSPORT = 'http';
+    process.env.MCP_AUTH_ISSUER_URL = 'http://localhost:3000';
+    assert.throws(() => loadConfig(), /MCP_AUTH_SECRET is required/);
+  });
+
+  it('throws when http mode missing MCP_AUTH_ISSUER_URL', () => {
+    process.env.MCP_TRANSPORT = 'http';
+    process.env.MCP_AUTH_SECRET = 'secret';
+    assert.throws(() => loadConfig(), /MCP_AUTH_ISSUER_URL is required/);
+  });
+
+  it('freezes transport and auth config', () => {
+    process.env.MCP_TRANSPORT = 'http';
+    process.env.MCP_AUTH_SECRET = 'secret';
+    process.env.MCP_AUTH_ISSUER_URL = 'http://localhost:3000';
+    const config = loadConfig();
+    assert.throws(() => { config.transport.mode = 'stdio'; }, TypeError);
+    assert.throws(() => { config.auth.secret = 'x'; }, TypeError);
   });
 });

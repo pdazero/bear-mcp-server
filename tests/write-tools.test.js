@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWriteTools } from '../src/tools/write-tools.js';
+import { createWriteTools, prepareCreateNoteParams } from '../src/tools/write-tools.js';
 
 const EXPECTED_TOOLS = [
   'create_note',
@@ -115,5 +115,52 @@ describe('write tool validation', () => {
       () => toolMap.grab_url.handler({}),
       { message: 'url is required' }
     );
+  });
+});
+
+describe('prepareCreateNoteParams', () => {
+  // Fixed date: 2026-03-01 14:30
+  const fixedDate = new Date(2026, 2, 1, 14, 30);
+
+  it('prefixes title with YYYYMMDDHHmm timestamp', () => {
+    const params = { title: 'Reunión equipo', text: 'Agenda' };
+    prepareCreateNoteParams(params, fixedDate);
+    assert.equal(params.title, '202603011430 Reunión equipo');
+    assert.equal(params.text, 'Agenda');
+  });
+
+  it('uses only timestamp when no title is provided', () => {
+    const params = { text: 'Solo body' };
+    prepareCreateNoteParams(params, fixedDate);
+    assert.equal(params.title, '202603011430');
+    assert.equal(params.text, 'Solo body');
+  });
+
+  it('appends context_tag as #_TAG at the end of text', () => {
+    const params = { title: 'Nota', text: 'Contenido', context_tag: 'FALP' };
+    prepareCreateNoteParams(params, fixedDate);
+    assert.equal(params.text, 'Contenido\n\n#_falp');
+    assert.equal(params.context_tag, undefined);
+  });
+
+  it('leaves text unchanged when no context_tag', () => {
+    const params = { title: 'Nota', text: 'Contenido original' };
+    prepareCreateNoteParams(params, fixedDate);
+    assert.equal(params.text, 'Contenido original');
+  });
+
+  it('creates text with only the tag when context_tag given but no text', () => {
+    const params = { title: 'Nota', context_tag: 'Deilania' };
+    prepareCreateNoteParams(params, fixedDate);
+    assert.equal(params.text, '#_deilania');
+    assert.equal(params.context_tag, undefined);
+  });
+
+  it('pads single-digit month/day/hour/minute with zeros', () => {
+    // 2026-01-05 09:03
+    const earlyDate = new Date(2026, 0, 5, 9, 3);
+    const params = { title: 'Test' };
+    prepareCreateNoteParams(params, earlyDate);
+    assert.equal(params.title, '202601050903 Test');
   });
 });

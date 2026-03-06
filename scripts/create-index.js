@@ -9,6 +9,8 @@ import { IndexManager } from '../src/rag/index-manager.js';
 
 const log = createLogger('indexer');
 
+const CHECKPOINT_INTERVAL = 200;
+
 async function main() {
   const config = loadConfig();
   setLogLevel(config.logLevel);
@@ -28,17 +30,35 @@ async function main() {
   const notes = getAllNotesForIndexing();
   log.info(`Found ${notes.length} notes to index`);
 
-  // Create index
+  // Try to resume from existing index
   const indexManager = new IndexManager(config.dataDir);
-  indexManager.initEmpty(config.embedding.dimensions);
+  const resumed = indexManager.load(config.embedding);
+
+  let skipped = 0;
+  if (resumed) {
+    log.info(`Resuming from existing index with ${indexManager.size} vectors`);
+  } else {
+    indexManager.initEmpty(config.embedding.dimensions);
+  }
 
   let indexed = 0;
+  let empty = 0;
   let errors = 0;
 
   for (let i = 0; i < notes.length; i++) {
     const note = notes[i];
+
+    // Skip already-indexed notes when resuming
+    if (resumed && indexManager.hasPoint(note.id)) {
+      skipped++;
+      continue;
+    }
+
     const text = `${note.title || ''}\n${note.content || ''}`.trim();
-    if (!text) continue;
+    if (!text) {
+      empty++;
+      continue;
+    }
 
     try {
       const vector = await provider.embed(text);
@@ -49,14 +69,21 @@ async function main() {
       errors++;
     }
 
-    if ((i + 1) % 100 === 0 || i === notes.length - 1) {
-      log.info(`Progress: ${i + 1}/${notes.length} (indexed: ${indexed}, errors: ${errors})`);
+    // Checkpoint save
+    if (indexed > 0 && indexed % CHECKPOINT_INTERVAL === 0) {
+      indexManager.save(config.embedding);
+      log.info(`Checkpoint saved at ${indexed} new notes indexed`);
+    }
+
+    const processed = skipped + indexed + errors + empty;
+    if (processed % 100 === 0 || i === notes.length - 1) {
+      log.info(`Progress: ${processed}/${notes.length} (new: ${indexed}, skipped: ${skipped}, empty: ${empty}, errors: ${errors})`);
     }
   }
 
-  // Save
+  // Final save
   indexManager.save(config.embedding);
-  log.info(`Indexing complete. ${indexed} notes indexed, ${errors} errors.`);
+  log.info(`Indexing complete. ${indexed} new notes indexed, ${skipped} skipped, ${errors} errors. Total: ${indexManager.size} vectors.`);
 
   // Cleanup
   await provider.dispose();
