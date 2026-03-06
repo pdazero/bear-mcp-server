@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import 'dotenv/config';
 import { loadConfig } from './config.js';
 import { setLogLevel, createLogger } from './utils/logger.js';
 import { openDatabase, closeDatabase } from './db/connection.js';
