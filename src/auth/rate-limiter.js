@@ -2,10 +2,11 @@ const MAX_ATTEMPTS = 5;
 const BASE_BLOCK_MS = 60_000;       // 1 minute
 const MAX_BLOCK_MS = 15 * 60_000;   // 15 minutes
 const CLEANUP_INTERVAL_MS = 10 * 60_000; // 10 minutes
+const STALE_TTL_MS = 30 * 60_000;   // 30 minutes
 
 export class LoginRateLimiter {
   constructor() {
-    this._attempts = new Map(); // ip → { count, blockedUntil }
+    this._attempts = new Map(); // ip → { count, blockedUntil, lastAttempt }
     this._cleanupTimer = setInterval(() => this._cleanup(), CLEANUP_INTERVAL_MS);
     this._cleanupTimer.unref();
   }
@@ -25,6 +26,7 @@ export class LoginRateLimiter {
   recordFailure(ip) {
     const record = this._attempts.get(ip) || { count: 0, blockedUntil: null };
     record.count += 1;
+    record.lastAttempt = Date.now();
     if (record.count >= MAX_ATTEMPTS) {
       const backoff = Math.min(BASE_BLOCK_MS * Math.pow(2, record.count - MAX_ATTEMPTS), MAX_BLOCK_MS);
       record.blockedUntil = Date.now() + backoff;
@@ -45,6 +47,8 @@ export class LoginRateLimiter {
     const now = Date.now();
     for (const [ip, record] of this._attempts) {
       if (record.blockedUntil && record.blockedUntil <= now) {
+        this._attempts.delete(ip);
+      } else if (now - record.lastAttempt > STALE_TTL_MS) {
         this._attempts.delete(ip);
       }
     }

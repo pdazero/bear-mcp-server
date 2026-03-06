@@ -170,6 +170,7 @@ export class BearOAuthProvider {
   }
 
   startCleanup(intervalMs = 3600000) {
+    this.stopCleanup();
     this._cleanupInterval = setInterval(() => this._purgeExpired(), intervalMs);
     this._cleanupInterval.unref();
   }

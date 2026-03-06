@@ -59,22 +59,35 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
 
   // Rate limiter and CSRF tokens
   const rateLimiter = new LoginRateLimiter();
-  const csrfTokens = new Map(); // csrfToken → pendingId
+  const CSRF_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  const csrfTokens = new Map(); // csrfToken → { pendingId, createdAt }
+  const csrfCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [token, entry] of csrfTokens) {
+      if (now - entry.createdAt > CSRF_TTL_MS) csrfTokens.delete(token);
+    }
+  }, CSRF_TTL_MS);
+  csrfCleanupTimer.unref();
+
+  function generateCsrf(pendingId) {
+    const token = crypto.randomUUID();
+    csrfTokens.set(token, { pendingId, createdAt: Date.now() });
+    return token;
+  }
 
   // Login page
   app.get('/login', (req, res) => {
     const pendingId = req.query.pending;
     const error = req.query.error;
-    const csrfToken = crypto.randomUUID();
-    csrfTokens.set(csrfToken, pendingId);
-    res.type('html').send(loginPage(pendingId, error, csrfToken));
+    res.type('html').send(loginPage(pendingId, error, generateCsrf(pendingId)));
   });
 
   app.post('/login', (req, res) => {
     const { password, pending, csrf_token } = req.body;
 
     // CSRF validation
-    if (!csrf_token || !csrfTokens.has(csrf_token) || csrfTokens.get(csrf_token) !== pending) {
+    const csrfEntry = csrf_token && csrfTokens.get(csrf_token);
+    if (!csrfEntry || csrfEntry.pendingId !== pending || Date.now() - csrfEntry.createdAt > CSRF_TTL_MS) {
       return res.redirect(`/login?pending=${encodeURIComponent(pending)}&error=invalid_pending`);
     }
     csrfTokens.delete(csrf_token);
@@ -84,7 +97,7 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     const rateCheck = rateLimiter.check(ip);
     if (rateCheck.blocked) {
       res.set('Retry-After', String(rateCheck.retryAfterSeconds));
-      return res.status(429).type('html').send(loginPage(pending, 'too_many_attempts'));
+      return res.status(429).type('html').send(loginPage(pending, 'too_many_attempts', generateCsrf(pending)));
     }
 
     const passwordBuf = Buffer.from(password || '');
@@ -199,6 +212,7 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     sessions,
     oauthProvider,
     async shutdown() {
+      clearInterval(csrfCleanupTimer);
       rateLimiter.dispose();
       oauthProvider.stopCleanup();
       for (const [, session] of sessions) {

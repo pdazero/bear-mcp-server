@@ -197,23 +197,26 @@ describe('BearOAuthProvider', () => {
 
   describe('cleanup', () => {
     it('purges expired pending auths and auth codes', async () => {
-      let pendingId;
-      const res = { redirect(url) { pendingId = new URL(url, 'http://x').searchParams.get('pending'); } };
+      let capturedId;
+      const res = { redirect(url) { capturedId = new URL(url, 'http://x').searchParams.get('pending'); } };
 
       // Create a pending auth and expire it
       await provider.authorize(client, makeParams(), res);
-      const pendingRecord = provider._pendingAuths.get(pendingId);
+      const expiredPendingId = capturedId;
+      const pendingRecord = provider._pendingAuths.get(expiredPendingId);
       pendingRecord.expiresAt = Date.now() - 1000;
 
-      // Create an auth code and expire it
+      // Create a second pending auth to get an auth code, then expire it
       await provider.authorize(client, makeParams(), res);
-      const redirectUrl = provider.approvePendingAuth(pendingId);
+      const secondPendingId = capturedId;
+      const redirectUrl = provider.approvePendingAuth(secondPendingId);
       const code = new URL(redirectUrl).searchParams.get('code');
       const codeRecord = provider._authCodes.get(code);
       codeRecord.expiresAt = Date.now() - 1000;
 
       const purged = provider._purgeExpired();
       assert.ok(purged >= 2);
+      assert.equal(provider._pendingAuths.has(expiredPendingId), false);
       assert.equal(provider._authCodes.has(code), false);
     });
 
