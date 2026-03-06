@@ -8,7 +8,7 @@ import { createProvider } from './rag/embeddings.js';
 import { IndexManager } from './rag/index-manager.js';
 import { createReadTools } from './tools/read-tools.js';
 import { createWriteTools } from './tools/write-tools.js';
-import { createMcpServer, startServer } from './server.js';
+import { createMcpServer, startStdioServer } from './server.js';
 import { AutoIndexer } from './indexer/auto-indexer.js';
 
 const log = createLogger('main');
@@ -69,8 +69,15 @@ async function main() {
   log.info(`Registered ${tools.length} tools`);
 
   // 5. Server
-  const server = createMcpServer(tools);
-  await startServer(server);
+  let httpHandle = null;
+
+  if (config.transport.mode === 'http') {
+    const { startHttpServer } = await import('./transport/http.js');
+    httpHandle = await startHttpServer({ createMcpServer, tools, config });
+  } else {
+    const server = createMcpServer(tools);
+    await startStdioServer(server);
+  }
 
   // 6. Auto-indexer
   let autoIndexer = null;
@@ -80,9 +87,10 @@ async function main() {
   }
 
   // 7. Signal handlers
-  const shutdown = (signal) => {
+  const shutdown = async (signal) => {
     log.info(`Received ${signal}, shutting down...`);
     if (autoIndexer) autoIndexer.stop();
+    if (httpHandle) await httpHandle.shutdown().catch(() => {});
     closeDatabase();
     if (provider) provider.dispose().catch(() => {});
     process.exit(0);
