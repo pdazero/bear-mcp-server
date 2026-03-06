@@ -22,7 +22,7 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     tokenTtlSeconds: authConfig.tokenTtlSeconds,
   });
 
-  const app = createMcpExpressApp({ host: transportConfig.host });
+  const app = createMcpExpressApp({ host: issuerUrl.hostname });
 
   // Body parsing for login form
   app.use('/login', express.urlencoded({ extended: false }));
