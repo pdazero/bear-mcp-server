@@ -28,6 +28,12 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
   // Body parsing for login form
   app.use('/login', express.urlencoded({ extended: false }));
 
+  // Request logging (before all routes)
+  app.use((req, _res, next) => {
+    log.debug(`${req.method} ${req.path}`);
+    next();
+  });
+
   // OAuth endpoints (must be before bearer auth)
   app.use(mcpAuthRouter({
     provider: oauthProvider,
@@ -116,6 +122,12 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
     await session.transport.close();
     sessions.delete(sessionId);
     res.status(200).json({ message: 'Session terminated' });
+  });
+
+  // Global error handler — catches unhandled errors from SDK OAuth routes
+  app.use((err, req, _res, next) => {
+    log.error(`${req.method} ${req.path}: ${err.message}`);
+    next(err);
   });
 
   const httpServer = app.listen(transportConfig.port, transportConfig.host, () => {

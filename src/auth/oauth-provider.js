@@ -1,5 +1,7 @@
 import crypto from 'crypto';
+import { createLogger } from '../utils/logger.js';
 
+const log = createLogger('oauth');
 const AUTH_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export class BearOAuthProvider {
@@ -56,6 +58,7 @@ export class BearOAuthProvider {
 
   async challengeForAuthorizationCode(_client, authorizationCode) {
     const record = this._authCodes.get(authorizationCode);
+    log.debug(`challengeForAuthorizationCode: code ${record ? 'found' : 'NOT found'}`);
     if (!record) throw new Error('Invalid authorization code');
     if (Date.now() > record.expiresAt) {
       this._authCodes.delete(authorizationCode);
@@ -65,14 +68,24 @@ export class BearOAuthProvider {
   }
 
   async exchangeAuthorizationCode(client, authorizationCode, redirectUri) {
+    log.debug(`exchangeAuthorizationCode: client_id=${client.client_id}`);
     const record = this._authCodes.get(authorizationCode);
-    if (!record) throw new Error('Invalid authorization code');
-    if (record.clientId !== client.client_id) throw new Error('Client mismatch');
+    if (!record) {
+      log.debug('exchangeAuthorizationCode: code NOT found');
+      throw new Error('Invalid authorization code');
+    }
+    log.debug(`exchangeAuthorizationCode: code found, clientId=${record.clientId}`);
+    if (record.clientId !== client.client_id) {
+      log.debug(`exchangeAuthorizationCode: client mismatch (expected=${record.clientId})`);
+      throw new Error('Client mismatch');
+    }
     if (Date.now() > record.expiresAt) {
       this._authCodes.delete(authorizationCode);
+      log.debug('exchangeAuthorizationCode: code expired');
       throw new Error('Authorization code expired');
     }
     if (record.redirectUri && redirectUri && record.redirectUri !== redirectUri) {
+      log.debug(`exchangeAuthorizationCode: redirect URI mismatch (stored=${record.redirectUri}, received=${redirectUri})`);
       throw new Error('Redirect URI mismatch');
     }
 
@@ -103,6 +116,7 @@ export class BearOAuthProvider {
 
   async exchangeRefreshToken(client, refreshToken) {
     const record = this._refreshTokens.get(refreshToken);
+    log.debug(`exchangeRefreshToken: token ${record ? 'found' : 'NOT found'}`);
     if (!record) throw new Error('Invalid refresh token');
     if (record.clientId !== client.client_id) throw new Error('Client mismatch');
 
@@ -125,11 +139,16 @@ export class BearOAuthProvider {
 
   async verifyAccessToken(token) {
     const record = this._accessTokens.get(token);
-    if (!record) throw new Error('Invalid access token');
+    if (!record) {
+      log.debug('verifyAccessToken: token NOT found');
+      throw new Error('Invalid access token');
+    }
     if (Math.floor(Date.now() / 1000) > record.expiresAt) {
       this._accessTokens.delete(token);
+      log.debug('verifyAccessToken: token expired');
       throw new Error('Access token expired');
     }
+    log.debug(`verifyAccessToken: valid, client_id=${record.clientId}`);
 
     return {
       token,
