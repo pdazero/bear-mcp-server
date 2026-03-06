@@ -23,6 +23,7 @@ export async function startHttpServer({ createMcpServer, tools, config }) {
   });
 
   const app = createMcpExpressApp({ host: issuerUrl.hostname });
+  app.set('trust proxy', 1);
 
   // Body parsing for login form
   app.use('/login', express.urlencoded({ extended: false }));
